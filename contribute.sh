@@ -4,15 +4,19 @@
 #  Generate backdated commits to fill your GitHub contribution graph.
 #
 #  Usage:
-#    Single date:  contribute.sh <DATE> <COUNT>
-#    Date range:   contribute.sh <START_DATE> <END_DATE> <COUNT_PER_DAY>
+#    Single date:  contribute.sh <DATE> <COUNT|random>
+#    Date range:   contribute.sh <START_DATE> <END_DATE> <COUNT_PER_DAY|random>
 #
 #  Options:
 #    -y, --yes     Skip confirmation prompt
 #
+#  COUNT can be a number or the keyword 'random' (picks 1–50 per day).
+#
 #  Examples:
 #    contribute.sh 2026-01-15 5              # 5 commits on Jan 15
+#    contribute.sh 2026-01-15 random         # random 1–50 commits on Jan 15
 #    contribute.sh 2026-01-01 2026-01-31 3   # 3 commits/day for all of January
+#    contribute.sh 2026-01-01 2026-01-31 random  # random 1–50 commits each day
 #    contribute.sh 2026-06-01 2026-06-30     # 1 commit/day for June (default)
 #    contribute.sh -y 2026-01-15 5           # skip confirmation
 # ============================================================================
@@ -49,15 +53,18 @@ NC='\033[0m'
 # ── Helpers ─────────────────────────────────────────────────────────────────
 usage() {
     echo -e "${BOLD}Usage:${NC}"
-    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT>${NC}                           # Single date"
-    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY]${NC}            # Date range"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT|random>${NC}                    # Single date"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY|random]${NC}     # Date range"
     echo ""
     echo -e "${BOLD}Options:${NC}"
-    echo -e "  ${YELLOW}-y, --yes${NC}   Skip confirmation prompt"
+    echo -e "  ${YELLOW}-y, --yes${NC}     Skip confirmation prompt"
+    echo -e "  ${YELLOW}random${NC}        Use as COUNT to pick a random number between 1–50 per day"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
     echo -e "  contribute.sh 2026-01-15 5"
+    echo -e "  contribute.sh 2026-01-15 random"
     echo -e "  contribute.sh 2026-01-01 2026-01-31 3"
+    echo -e "  contribute.sh 2026-01-01 2026-01-31 random"
     echo -e "  contribute.sh 2026-06-01 2026-06-30"
     echo -e "  contribute.sh -y 2026-01-15 5"
     echo ""
@@ -91,6 +98,19 @@ is_date() {
 
 is_number() {
     [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+is_random() {
+    [[ "$1" == "random" || "$1" == "RANDOM" || "$1" == "Random" ]]
+}
+
+# Generate a random number between 1 and 50
+random_count() {
+    echo $(( RANDOM % 50 + 1 ))
+}
+
+is_count_arg() {
+    is_number "$1" || is_random "$1"
 }
 
 make_commits() {
@@ -133,13 +153,20 @@ if [[ $# -lt 2 ]]; then
     usage
 fi
 
-if is_date "$1" && is_number "$2"; then
+if is_date "$1" && is_count_arg "$2"; then
     # ── Mode 1: Single date ─────────────────────────────────────────────
     TARGET_DATE="$1"
-    COMMIT_COUNT="$2"
+
+    if is_random "$2"; then
+        COMMIT_COUNT=$(random_count)
+        COUNT_LABEL="random → ${COMMIT_COUNT}"
+    else
+        COMMIT_COUNT="$2"
+        COUNT_LABEL="$COMMIT_COUNT"
+    fi
 
     echo ""
-    echo -e "${BOLD}${CYAN}🟢 Generating ${COMMIT_COUNT} commits on ${TARGET_DATE}${NC}"
+    echo -e "${BOLD}${CYAN}🟢 Generating ${COUNT_LABEL} commits on ${TARGET_DATE}${NC}"
     echo -e "   ${YELLOW}Target: $REPO_DIR${NC}"
     echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
 
@@ -152,9 +179,12 @@ elif is_date "$1" && is_date "$2"; then
     START_DATE="$1"
     END_DATE="$2"
     COMMITS_PER_DAY="${3:-1}"
+    USE_RANDOM=false
 
-    if ! is_number "$COMMITS_PER_DAY"; then
-        echo -e "${RED}Error:${NC} commits-per-day must be a number, got '${COMMITS_PER_DAY}'"
+    if is_random "$COMMITS_PER_DAY"; then
+        USE_RANDOM=true
+    elif ! is_number "$COMMITS_PER_DAY"; then
+        echo -e "${RED}Error:${NC} commits-per-day must be a number or 'random', got '${COMMITS_PER_DAY}'"
         exit 1
     fi
 
@@ -167,11 +197,16 @@ elif is_date "$1" && is_date "$2"; then
     fi
 
     total_days=$(( (end_epoch - start_epoch) / 86400 + 1 ))
-    total_commits=$((total_days * COMMITS_PER_DAY))
 
     echo ""
-    echo -e "${BOLD}${CYAN}🟢 Generating ${COMMITS_PER_DAY} commit(s)/day from ${START_DATE} → ${END_DATE}${NC}"
-    echo -e "   ${YELLOW}${total_days} days × ${COMMITS_PER_DAY} commits = ${total_commits} total commits${NC}"
+    if [[ "$USE_RANDOM" == true ]]; then
+        echo -e "${BOLD}${CYAN}🟢 Generating random(1–50) commit(s)/day from ${START_DATE} → ${END_DATE}${NC}"
+        echo -e "   ${YELLOW}${total_days} days × random(1–50) commits each${NC}"
+    else
+        total_commits=$((total_days * COMMITS_PER_DAY))
+        echo -e "${BOLD}${CYAN}🟢 Generating ${COMMITS_PER_DAY} commit(s)/day from ${START_DATE} → ${END_DATE}${NC}"
+        echo -e "   ${YELLOW}${total_days} days × ${COMMITS_PER_DAY} commits = ${total_commits} total commits${NC}"
+    fi
     echo -e "   ${YELLOW}Target: $REPO_DIR${NC}"
     echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
 
@@ -181,7 +216,12 @@ elif is_date "$1" && is_date "$2"; then
 
     while [[ $current_epoch -le $end_epoch ]]; do
         current_date=$(date -j -f "%s" "$current_epoch" "+%Y-%m-%d")
-        make_commits "$current_date" "$COMMITS_PER_DAY"
+        if [[ "$USE_RANDOM" == true ]]; then
+            day_count=$(random_count)
+        else
+            day_count="$COMMITS_PER_DAY"
+        fi
+        make_commits "$current_date" "$day_count"
         current_epoch=$((current_epoch + 86400))
     done
 else
