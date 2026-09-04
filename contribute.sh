@@ -4,23 +4,39 @@
 #  Generate backdated commits to fill your GitHub contribution graph.
 #
 #  Usage:
-#    Single date:  ./contribute.sh <DATE> <COUNT>
-#    Date range:   ./contribute.sh <START_DATE> <END_DATE> <COUNT_PER_DAY>
+#    Single date:  contribute.sh <DATE> <COUNT>
+#    Date range:   contribute.sh <START_DATE> <END_DATE> <COUNT_PER_DAY>
 #
 #  Options:
 #    -y, --yes     Skip confirmation prompt
 #
 #  Examples:
-#    ./contribute.sh 2026-01-15 5              # 5 commits on Jan 15
-#    ./contribute.sh 2026-01-01 2026-01-31 3   # 3 commits/day for all of January
-#    ./contribute.sh 2026-06-01 2026-06-30     # 1 commit/day for June (default)
-#    ./contribute.sh -y 2026-01-15 5           # skip confirmation
+#    contribute.sh 2026-01-15 5              # 5 commits on Jan 15
+#    contribute.sh 2026-01-01 2026-01-31 3   # 3 commits/day for all of January
+#    contribute.sh 2026-06-01 2026-06-30     # 1 commit/day for June (default)
+#    contribute.sh -y 2026-01-15 5           # skip confirmation
 # ============================================================================
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTRIB_FILE="$SCRIPT_DIR/contributions.log"
+# ── Target Repo (ALWAYS use this, regardless of where you run the script) ──
+REPO_DIR="$HOME/projects/daily-contributions"
+CONTRIB_FILE="$REPO_DIR/contributions.log"
+
+# Verify the target repo exists and is a git repo
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+    echo -e "\033[0;31mError:\033[0m Target repo not found at $REPO_DIR"
+    echo "Run setup.sh first, or clone: git clone git@github.com:shard-c6/daily-contributions.git $REPO_DIR"
+    exit 1
+fi
+
+# Verify remote points to the right place
+REMOTE_URL=$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || echo "")
+if [[ "$REMOTE_URL" != *"daily-contributions"* ]]; then
+    echo -e "\033[0;31mError:\033[0m Repo at $REPO_DIR does not point to daily-contributions!"
+    echo "Remote: $REMOTE_URL"
+    exit 1
+fi
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -33,19 +49,20 @@ NC='\033[0m'
 # ── Helpers ─────────────────────────────────────────────────────────────────
 usage() {
     echo -e "${BOLD}Usage:${NC}"
-    echo -e "  ${CYAN}./contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT>${NC}                           # Single date"
-    echo -e "  ${CYAN}./contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY]${NC}            # Date range"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT>${NC}                           # Single date"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY]${NC}            # Date range"
     echo ""
     echo -e "${BOLD}Options:${NC}"
     echo -e "  ${YELLOW}-y, --yes${NC}   Skip confirmation prompt"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
-    echo -e "  ./contribute.sh 2026-01-15 5"
-    echo -e "  ./contribute.sh 2026-01-01 2026-01-31 3"
-    echo -e "  ./contribute.sh 2026-06-01 2026-06-30"
-    echo -e "  ./contribute.sh -y 2026-01-15 5"
+    echo -e "  contribute.sh 2026-01-15 5"
+    echo -e "  contribute.sh 2026-01-01 2026-01-31 3"
+    echo -e "  contribute.sh 2026-06-01 2026-06-30"
+    echo -e "  contribute.sh -y 2026-01-15 5"
     echo ""
     echo -e "${BOLD}Date format:${NC} YYYY-MM-DD"
+    echo -e "${BOLD}Target repo:${NC} $REPO_DIR"
     exit 1
 }
 
@@ -91,11 +108,8 @@ make_commits() {
 
         echo "${timestamp} | commit #${i}/${count}" >> "$CONTRIB_FILE"
 
-        export GIT_AUTHOR_DATE="$timestamp"
-        export GIT_COMMITTER_DATE="$timestamp"
-
-        git add -A
-        git commit --allow-empty \
+        GIT_AUTHOR_DATE="$timestamp" GIT_COMMITTER_DATE="$timestamp" \
+        git -C "$REPO_DIR" commit --allow-empty \
             -m "contrib: ${target_date} [${i}/${count}]" \
             --date="$timestamp" \
             --quiet
@@ -126,11 +140,11 @@ if is_date "$1" && is_number "$2"; then
 
     echo ""
     echo -e "${BOLD}${CYAN}🟢 Generating ${COMMIT_COUNT} commits on ${TARGET_DATE}${NC}"
+    echo -e "   ${YELLOW}Target: $REPO_DIR${NC}"
     echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
 
     confirm
 
-    cd "$SCRIPT_DIR"
     make_commits "$TARGET_DATE" "$COMMIT_COUNT"
 
 elif is_date "$1" && is_date "$2"; then
@@ -158,11 +172,11 @@ elif is_date "$1" && is_date "$2"; then
     echo ""
     echo -e "${BOLD}${CYAN}🟢 Generating ${COMMITS_PER_DAY} commit(s)/day from ${START_DATE} → ${END_DATE}${NC}"
     echo -e "   ${YELLOW}${total_days} days × ${COMMITS_PER_DAY} commits = ${total_commits} total commits${NC}"
+    echo -e "   ${YELLOW}Target: $REPO_DIR${NC}"
     echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
 
     confirm
 
-    cd "$SCRIPT_DIR"
     current_epoch=$start_epoch
 
     while [[ $current_epoch -le $end_epoch ]]; do
@@ -179,7 +193,7 @@ fi
 # ── Push ────────────────────────────────────────────────────────────────────
 echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
 echo -e "${CYAN}Pushing to origin/main...${NC}"
-git push -u origin main --quiet 2>/dev/null || git push origin main --quiet
+git -C "$REPO_DIR" push -u origin main --quiet 2>/dev/null || git -C "$REPO_DIR" push origin main --quiet
 
 echo -e "${GREEN}${BOLD}✅ Done!${NC} Contributions will appear on your GitHub profile shortly."
 echo ""
