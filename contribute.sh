@@ -5,20 +5,30 @@
 #
 #  Usage:
 #    Single date:  contribute.sh <DATE> <COUNT|random>
+#    Week mode:    contribute.sh <DATE> --week <COUNT|random>
 #    Date range:   contribute.sh <START_DATE> <END_DATE> <COUNT_PER_DAY|random>
 #
 #  Options:
 #    -y, --yes     Skip confirmation prompt
+#    --week        Generate commits for 7 days starting from DATE
 #
 #  COUNT can be a number or the keyword 'random' (picks 1–50 per day).
 #
+#  Date formats (all accepted, auto-detected):
+#    yyyy-mm-dd    2026-01-15
+#    dd-mm-yyyy    15-01-2026
+#    yy-mm-dd      26-01-15      (2-digit year detected when first part > 31)
+#    dd-mm-yy      15-01-26      (default for ambiguous 2-digit dates)
+#
 #  Examples:
-#    contribute.sh 2026-01-15 5              # 5 commits on Jan 15
-#    contribute.sh 2026-01-15 random         # random 1–50 commits on Jan 15
-#    contribute.sh 2026-01-01 2026-01-31 3   # 3 commits/day for all of January
+#    contribute.sh 2026-01-15 5                  # 5 commits on Jan 15
+#    contribute.sh 15-01-2026 5                  # same, dd-mm-yyyy format
+#    contribute.sh 2026-01-15 random             # random 1–50 commits on Jan 15
+#    contribute.sh 2026-01-15 --week random      # random commits/day for 7 days
+#    contribute.sh 15-01-26 --week 5             # 5 commits/day for a week
+#    contribute.sh 2026-01-01 2026-01-31 3       # 3 commits/day for all of January
 #    contribute.sh 2026-01-01 2026-01-31 random  # random 1–50 commits each day
-#    contribute.sh 2026-06-01 2026-06-30     # 1 commit/day for June (default)
-#    contribute.sh -y 2026-01-15 5           # skip confirmation
+#    contribute.sh -y 2026-01-15 5               # skip confirmation
 # ============================================================================
 
 set -euo pipefail
@@ -53,22 +63,25 @@ NC='\033[0m'
 # ── Helpers ─────────────────────────────────────────────────────────────────
 usage() {
     echo -e "${BOLD}Usage:${NC}"
-    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT|random>${NC}                    # Single date"
-    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY|random]${NC}     # Date range"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT|random>${NC}                        # Single date"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}--week${NC} ${YELLOW}<COUNT|random>${NC}                  # 7 days from DATE"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY|random]${NC}         # Date range"
     echo ""
     echo -e "${BOLD}Options:${NC}"
     echo -e "  ${YELLOW}-y, --yes${NC}     Skip confirmation prompt"
+    echo -e "  ${YELLOW}--week${NC}        Generate commits for 7 days starting from DATE"
     echo -e "  ${YELLOW}random${NC}        Use as COUNT to pick a random number between 1–50 per day"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
     echo -e "  contribute.sh 2026-01-15 5"
-    echo -e "  contribute.sh 2026-01-15 random"
+    echo -e "  contribute.sh 15-01-2026 random"
+    echo -e "  contribute.sh 2026-01-15 --week random"
+    echo -e "  contribute.sh 15-01-26 --week 5"
     echo -e "  contribute.sh 2026-01-01 2026-01-31 3"
     echo -e "  contribute.sh 2026-01-01 2026-01-31 random"
-    echo -e "  contribute.sh 2026-06-01 2026-06-30"
     echo -e "  contribute.sh -y 2026-01-15 5"
     echo ""
-    echo -e "${BOLD}Date format:${NC} YYYY-MM-DD"
+    echo -e "${BOLD}Date formats:${NC} yyyy-mm-dd, dd-mm-yyyy, yy-mm-dd, dd-mm-yy"
     echo -e "${BOLD}Target repo:${NC} $REPO_DIR"
     exit 1
 }
@@ -88,12 +101,49 @@ confirm() {
     echo ""
 }
 
-is_date() {
-    if [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-        date -j -f "%Y-%m-%d" "$1" "+%Y-%m-%d" &>/dev/null 2>&1
-        return $?
+# ── Date Normalization ──────────────────────────────────────────────────────
+# Accepts: yyyy-mm-dd, dd-mm-yyyy, yy-mm-dd, dd-mm-yy
+# Returns: YYYY-MM-DD on stdout, exit 0 on success, exit 1 on failure
+normalize_date() {
+    local input="$1"
+
+    # Must match NN-NN-NN or NNNN-NN-NN or NN-NN-NNNN
+    if [[ ! "$input" =~ ^[0-9]{2,4}-[0-9]{2}-[0-9]{2,4}$ ]]; then
+        return 1
+    fi
+
+    local p1 p2 p3 year month day
+    IFS='-' read -r p1 p2 p3 <<< "$input"
+
+    if [[ ${#p1} -eq 4 ]]; then
+        # yyyy-mm-dd
+        year="$p1"; month="$p2"; day="$p3"
+    elif [[ ${#p3} -eq 4 ]]; then
+        # dd-mm-yyyy
+        day="$p1"; month="$p2"; year="$p3"
+    elif [[ ${#p1} -eq 2 && ${#p3} -eq 2 ]]; then
+        # Ambiguous: yy-mm-dd vs dd-mm-yy
+        # Heuristic: if first part > 31, it can't be a day → treat as yy-mm-dd
+        if [[ $((10#$p1)) -gt 31 ]]; then
+            year="20${p1}"; month="$p2"; day="$p3"
+        else
+            day="$p1"; month="$p2"; year="20${p3}"
+        fi
+    else
+        return 1
+    fi
+
+    # Validate the resulting date
+    local normalized="${year}-${month}-${day}"
+    if date -j -f "%Y-%m-%d" "$normalized" "+%Y-%m-%d" &>/dev/null 2>&1; then
+        echo "$normalized"
+        return 0
     fi
     return 1
+}
+
+is_date() {
+    normalize_date "$1" >/dev/null 2>&1
 }
 
 is_number() {
@@ -140,7 +190,7 @@ make_commits() {
 
 # ── Parse Flags ─────────────────────────────────────────────────────────────
 SKIP_CONFIRM=false
-while [[ $# -gt 0 && "$1" =~ ^- ]]; do
+while [[ $# -gt 0 && "$1" =~ ^- && ! $(normalize_date "$1" 2>/dev/null) ]]; do
     case "$1" in
         -y|--yes) SKIP_CONFIRM=true; shift ;;
         -h|--help) usage ;;
@@ -153,9 +203,59 @@ if [[ $# -lt 2 ]]; then
     usage
 fi
 
-if is_date "$1" && is_count_arg "$2"; then
+# Normalize all date arguments upfront
+if is_date "$1"; then
+    ARG1=$(normalize_date "$1")
+else
+    ARG1="$1"
+fi
+
+if is_date "$1" && [[ "${2:-}" == "--week" ]]; then
+    # ── Mode 3: Week mode ──────────────────────────────────────────────
+    TARGET_DATE="$ARG1"
+    WEEK_COUNT="${3:-1}"
+    USE_RANDOM=false
+
+    if is_random "$WEEK_COUNT"; then
+        USE_RANDOM=true
+    elif ! is_number "$WEEK_COUNT"; then
+        echo -e "${RED}Error:${NC} commit count must be a number or 'random', got '${WEEK_COUNT}'"
+        exit 1
+    fi
+
+    start_epoch=$(date -j -f "%Y-%m-%d" "$TARGET_DATE" "+%s")
+    end_epoch=$((start_epoch + 6 * 86400))  # 7 days inclusive
+    END_DATE=$(date -j -f "%s" "$end_epoch" "+%Y-%m-%d")
+
+    echo ""
+    if [[ "$USE_RANDOM" == true ]]; then
+        echo -e "${BOLD}${CYAN}🟢 Generating random(1–50) commit(s)/day for 7 days: ${TARGET_DATE} → ${END_DATE}${NC}"
+        echo -e "   ${YELLOW}7 days × random(1–50) commits each${NC}"
+    else
+        total_commits=$((7 * WEEK_COUNT))
+        echo -e "${BOLD}${CYAN}🟢 Generating ${WEEK_COUNT} commit(s)/day for 7 days: ${TARGET_DATE} → ${END_DATE}${NC}"
+        echo -e "   ${YELLOW}7 days × ${WEEK_COUNT} commits = ${total_commits} total commits${NC}"
+    fi
+    echo -e "   ${YELLOW}Target: $REPO_DIR${NC}"
+    echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
+
+    confirm
+
+    current_epoch=$start_epoch
+    while [[ $current_epoch -le $end_epoch ]]; do
+        current_date=$(date -j -f "%s" "$current_epoch" "+%Y-%m-%d")
+        if [[ "$USE_RANDOM" == true ]]; then
+            day_count=$(random_count)
+        else
+            day_count="$WEEK_COUNT"
+        fi
+        make_commits "$current_date" "$day_count"
+        current_epoch=$((current_epoch + 86400))
+    done
+
+elif is_date "$1" && is_count_arg "$2"; then
     # ── Mode 1: Single date ─────────────────────────────────────────────
-    TARGET_DATE="$1"
+    TARGET_DATE="$ARG1"
 
     if is_random "$2"; then
         COMMIT_COUNT=$(random_count)
@@ -176,8 +276,8 @@ if is_date "$1" && is_count_arg "$2"; then
 
 elif is_date "$1" && is_date "$2"; then
     # ── Mode 2: Date range ──────────────────────────────────────────────
-    START_DATE="$1"
-    END_DATE="$2"
+    START_DATE="$ARG1"
+    END_DATE=$(normalize_date "$2")
     COMMITS_PER_DAY="${3:-1}"
     USE_RANDOM=false
 
