@@ -7,10 +7,14 @@
 #    Single date:  ./contribute.sh <DATE> <COUNT>
 #    Date range:   ./contribute.sh <START_DATE> <END_DATE> <COUNT_PER_DAY>
 #
+#  Options:
+#    -y, --yes     Skip confirmation prompt
+#
 #  Examples:
 #    ./contribute.sh 2026-01-15 5              # 5 commits on Jan 15
 #    ./contribute.sh 2026-01-01 2026-01-31 3   # 3 commits/day for all of January
 #    ./contribute.sh 2026-06-01 2026-06-30     # 1 commit/day for June (default)
+#    ./contribute.sh -y 2026-01-15 5           # skip confirmation
 # ============================================================================
 
 set -euo pipefail
@@ -32,13 +36,32 @@ usage() {
     echo -e "  ${CYAN}./contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT>${NC}                           # Single date"
     echo -e "  ${CYAN}./contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY]${NC}            # Date range"
     echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo -e "  ${YELLOW}-y, --yes${NC}   Skip confirmation prompt"
+    echo ""
     echo -e "${BOLD}Examples:${NC}"
     echo -e "  ./contribute.sh 2026-01-15 5"
     echo -e "  ./contribute.sh 2026-01-01 2026-01-31 3"
     echo -e "  ./contribute.sh 2026-06-01 2026-06-30"
+    echo -e "  ./contribute.sh -y 2026-01-15 5"
     echo ""
     echo -e "${BOLD}Date format:${NC} YYYY-MM-DD"
     exit 1
+}
+
+confirm() {
+    if [[ "$SKIP_CONFIRM" == true ]]; then
+        return 0
+    fi
+    echo ""
+    echo -e "  ${RED}⚠  This action is irreversible — commits cannot be undone.${NC}"
+    echo -e -n "  ${BOLD}Proceed? [y/N]:${NC} "
+    read -r answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo -e "  ${YELLOW}Aborted.${NC}"
+        exit 0
+    fi
+    echo ""
 }
 
 is_date() {
@@ -81,6 +104,16 @@ make_commits() {
     echo -e "  ${GREEN}✓${NC} ${display_date}  →  ${BOLD}${count}${NC} commit(s)"
 }
 
+# ── Parse Flags ─────────────────────────────────────────────────────────────
+SKIP_CONFIRM=false
+while [[ $# -gt 0 && "$1" =~ ^- ]]; do
+    case "$1" in
+        -y|--yes) SKIP_CONFIRM=true; shift ;;
+        -h|--help) usage ;;
+        *) echo -e "${RED}Unknown flag:${NC} $1"; usage ;;
+    esac
+done
+
 # ── Parse Arguments ─────────────────────────────────────────────────────────
 if [[ $# -lt 2 ]]; then
     usage
@@ -94,6 +127,8 @@ if is_date "$1" && is_number "$2"; then
     echo ""
     echo -e "${BOLD}${CYAN}🟢 Generating ${COMMIT_COUNT} commits on ${TARGET_DATE}${NC}"
     echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
+
+    confirm
 
     cd "$SCRIPT_DIR"
     make_commits "$TARGET_DATE" "$COMMIT_COUNT"
@@ -124,6 +159,8 @@ elif is_date "$1" && is_date "$2"; then
     echo -e "${BOLD}${CYAN}🟢 Generating ${COMMITS_PER_DAY} commit(s)/day from ${START_DATE} → ${END_DATE}${NC}"
     echo -e "   ${YELLOW}${total_days} days × ${COMMITS_PER_DAY} commits = ${total_commits} total commits${NC}"
     echo -e "${YELLOW}─────────────────────────────────────────────${NC}"
+
+    confirm
 
     cd "$SCRIPT_DIR"
     current_epoch=$start_epoch
