@@ -18,7 +18,7 @@ A single-command shell script to generate backdated GitHub commits and visualize
 
 ```bash
 # 1. Install globally with one command (requires sudo if not run as root)
-sudo curl -sSL https://raw.githubusercontent.com/shard-c6/daily-contributions/main/contribute.sh -o /usr/local/bin/contribute && sudo chmod +x /usr/local/bin/contribute
+sudo curl -sSL https://raw.githubusercontent.com/shard-c2104/daily-contributions/main/contribute.sh -o /usr/local/bin/contribute && sudo chmod +x /usr/local/bin/contribute
 
 # 2. Generate 5 commits on a specific date
 contribute 2026-01-15 5
