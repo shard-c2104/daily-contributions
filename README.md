@@ -1,5 +1,9 @@
 # 🟢 GitHub Contribution Painter (Educational Prototype)
 
+<p align="center">
+  <img src="assets/banner.jpg" alt="Contribution Painter Banner" width="100%">
+</p>
+
 > [!CAUTION]
 > **Educational Purposes Only**
 > This project was built strictly as an experiment to test out shell scripting, Git history manipulation, and command-line automation. It is **not recommended for actual use**. Use with extreme caution — GitHub's automated abuse detection systems may suspend or ban your account if they identify an unnatural volume of commits generated in a short period of time.
