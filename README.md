@@ -6,22 +6,19 @@ A single-command tool to generate backdated GitHub commits — paint your contri
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Installation & Quick Start
 
 ```bash
-# Clone the repo
-git clone git@github.com:shard-c6/daily-contributions.git
-cd daily-contributions
+# 1. Install globally with one command (requires sudo if not run as root)
+sudo curl -sSL https://raw.githubusercontent.com/shard-c6/daily-contributions/main/contribute.sh -o /usr/local/bin/contribute && sudo chmod +x /usr/local/bin/contribute
 
-# Make the script executable (first time only)
-chmod +x contribute.sh
-
-# Generate 5 commits on a specific date
-./contribute.sh 2026-01-15 5
+# 2. Generate 5 commits on a specific date
+contribute 2026-01-15 5
 
 # Generate 3 commits/day for an entire month
-./contribute.sh 2026-08-01 2026-08-31 3
+contribute 2026-08-01 2026-08-31 3
 ```
+*(The first time you run it, it will securely set up a hidden dummy repository at `~/.daily-contributions` and ask for your remote GitHub repo URL.)*
 
 ---
 
@@ -30,7 +27,7 @@ chmod +x contribute.sh
 ### Mode 1 — Single Date
 
 ```bash
-./contribute.sh <DATE> <COUNT>
+contribute <DATE> <COUNT>
 ```
 
 | Argument | Description              | Example        |
@@ -41,14 +38,14 @@ chmod +x contribute.sh
 **Example:**
 
 ```bash
-./contribute.sh 2026-03-14 7
+contribute 2026-03-14 7
 # → 7 commits on March 14, 2026
 ```
 
 ### Mode 2 — Date Range
 
 ```bash
-./contribute.sh <START_DATE> <END_DATE> [COUNT_PER_DAY]
+contribute <START_DATE> <END_DATE> [COUNT_PER_DAY]
 ```
 
 | Argument        | Description                     | Example        |
@@ -60,7 +57,7 @@ chmod +x contribute.sh
 **Example:**
 
 ```bash
-./contribute.sh 2026-06-01 2026-06-30 2
+contribute 2026-06-01 2026-06-30 2
 # → 2 commits/day × 30 days = 60 total commits for June
 ```
 
@@ -68,15 +65,21 @@ chmod +x contribute.sh
 
 ## 🔧 Options
 
-| Flag         | Description                 |
-|--------------|-----------------------------|
-| `-y, --yes`  | Skip the confirmation prompt |
-| `-h, --help` | Show usage help              |
+| Flag                 | Description                                    |
+|----------------------|------------------------------------------------|
+| `-y, --yes`          | Skip the confirmation prompt                   |
+| `--week`             | Generate commits for 7 days starting from DATE |
+| `--undo <DATE>`      | Undo commits generated on a specific date      |
+| `--nuke`             | Delete ALL generated commits and start fresh   |
+| `-h, --help`         | Show usage help                                |
 
-**Example — skip confirmation:**
+**Examples:**
 
 ```bash
-./contribute.sh -y 2026-07-04 10
+contribute -y 2026-07-04 10          # Skip confirmation
+contribute 2026-01-15 --week random  # Random 1-50 commits for a week
+contribute --undo 2026-01-15         # Undo commits for a date
+contribute --nuke                    # Wipe all contributions
 ```
 
 ---
@@ -105,19 +108,7 @@ Every run shows a **confirmation prompt** before committing:
 3. **Randomizes the timestamp** within 8 AM – 10 PM for each commit so it looks natural
 4. **Auto-pushes** to `origin/main` — contributions appear on your GitHub graph within minutes
 
-All commits are logged to `contributions.log` for your reference.
-
----
-
-## 📁 Project Structure
-
-```
-daily-contributions/
-├── contribute.sh       # Main script — the only thing you need to run
-├── contributions.log   # Auto-generated log of all commits made
-├── .gitignore
-└── README.md
-```
+All commits are logged to `~/.daily-contributions/contributions.log` for your reference and to support the `--undo` feature.
 
 ---
 

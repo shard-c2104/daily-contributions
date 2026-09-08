@@ -34,21 +34,24 @@
 set -euo pipefail
 
 # ── Target Repo (ALWAYS use this, regardless of where you run the script) ──
-REPO_DIR="$HOME/projects/daily-contributions"
+REPO_DIR="${CONTRIB_REPO:-$HOME/.daily-contributions}"
 CONTRIB_FILE="$REPO_DIR/contributions.log"
 
 # Verify the target repo exists and is a git repo
 if [[ ! -d "$REPO_DIR/.git" ]]; then
-    echo -e "\033[0;31mError:\033[0m Target repo not found at $REPO_DIR"
-    echo "Run setup.sh first, or clone: git clone git@github.com:shard-c6/daily-contributions.git $REPO_DIR"
-    exit 1
+    echo -e "\033[1;33mSetting up local repository at $REPO_DIR...\033[0m"
+    mkdir -p "$REPO_DIR"
+    git -C "$REPO_DIR" init >/dev/null 2>&1
+    echo -e -n "  \033[1mEnter the GitHub URL for your private contributions repo:\033[0m "
+    read -r remote_url
+    git -C "$REPO_DIR" remote add origin "$remote_url"
+    echo ""
 fi
 
 # Verify remote points to the right place
 REMOTE_URL=$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || echo "")
-if [[ "$REMOTE_URL" != *"daily-contributions"* ]]; then
-    echo -e "\033[0;31mError:\033[0m Repo at $REPO_DIR does not point to daily-contributions!"
-    echo "Remote: $REMOTE_URL"
+if [[ -z "$REMOTE_URL" ]]; then
+    echo -e "\033[0;31mError:\033[0m Repo at $REPO_DIR has no origin remote!"
     exit 1
 fi
 
@@ -66,6 +69,8 @@ usage() {
     echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}<COUNT|random>${NC}                        # Single date"
     echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<DATE>${NC} ${YELLOW}--week${NC} ${YELLOW}<COUNT|random>${NC}                  # 7 days from DATE"
     echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}<START>${NC} ${YELLOW}<END>${NC} ${YELLOW}[COUNT_PER_DAY|random]${NC}         # Date range"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}--undo <DATE>${NC}                         # Undo commits for a date"
+    echo -e "  ${CYAN}contribute.sh${NC} ${YELLOW}--nuke${NC}                                # Delete ALL commits"
     echo ""
     echo -e "${BOLD}Options:${NC}"
     echo -e "  ${YELLOW}-y, --yes${NC}     Skip confirmation prompt"
@@ -79,6 +84,8 @@ usage() {
     echo -e "  contribute.sh 15-01-26 --week 5"
     echo -e "  contribute.sh 2026-01-01 2026-01-31 3"
     echo -e "  contribute.sh 2026-01-01 2026-01-31 random"
+    echo -e "  contribute.sh --undo 2026-01-15"
+    echo -e "  contribute.sh --nuke"
     echo -e "  contribute.sh -y 2026-01-15 5"
     echo ""
     echo -e "${BOLD}Date formats:${NC} yyyy-mm-dd, dd-mm-yyyy, yy-mm-dd, dd-mm-yy"
@@ -190,13 +197,69 @@ make_commits() {
 
 # ── Parse Flags ─────────────────────────────────────────────────────────────
 SKIP_CONFIRM=false
-while [[ $# -gt 0 && "$1" =~ ^- && ! $(normalize_date "$1" 2>/dev/null) ]]; do
+while [[ $# -gt 0 && "$1" =~ ^- && ! $(normalize_date "$1" 2>/dev/null) && "$1" != "--undo" && "$1" != "--nuke" ]]; do
     case "$1" in
         -y|--yes) SKIP_CONFIRM=true; shift ;;
         -h|--help) usage ;;
         *) echo -e "${RED}Unknown flag:${NC} $1"; usage ;;
     esac
 done
+
+# ── Handle Undo/Nuke ────────────────────────────────────────────────────────
+rebuild_repo() {
+    echo -e "${YELLOW}Rebuilding git history...${NC}"
+    rm -rf "$REPO_DIR/.git"
+    git -C "$REPO_DIR" init -b main >/dev/null 2>&1 || git -C "$REPO_DIR" init >/dev/null
+    git -C "$REPO_DIR" remote add origin "$REMOTE_URL"
+    
+    if [[ -s "$CONTRIB_FILE" ]]; then
+        while IFS= read -r line; do
+            if [[ "$line" == *" | commit "* ]]; then
+                local timestamp="${line%% | *}"
+                local msg="${line##* | }"
+                
+                GIT_AUTHOR_DATE="$timestamp" GIT_COMMITTER_DATE="$timestamp" \
+                git -C "$REPO_DIR" commit --allow-empty \
+                    -m "contrib: $msg" \
+                    --date="$timestamp" \
+                    --quiet
+            fi
+        done < "$CONTRIB_FILE"
+    else
+        git -C "$REPO_DIR" commit --allow-empty -m "Initial commit" --quiet
+    fi
+    
+    git -C "$REPO_DIR" branch -M main >/dev/null 2>&1 || true
+    echo -e "${CYAN}Force pushing to origin/main...${NC}"
+    git -C "$REPO_DIR" push -u origin main --force --quiet 2>/dev/null || git -C "$REPO_DIR" push origin main --force --quiet
+    echo -e "${GREEN}${BOLD}✅ Done!${NC}"
+    exit 0
+}
+
+if [[ "${1:-}" == "--undo" ]]; then
+    if [[ -z "${2:-}" ]] || ! is_date "$2"; then
+        echo -e "${RED}Error:${NC} Please provide a valid date to undo."
+        exit 1
+    fi
+    TARGET_DATE=$(normalize_date "$2")
+    echo -e "${BOLD}${CYAN}🟢 Undoing commits for ${TARGET_DATE}${NC}"
+    confirm
+    
+    if [[ -f "$CONTRIB_FILE" ]]; then
+        grep -v "^${TARGET_DATE}" "$CONTRIB_FILE" > "$CONTRIB_FILE.tmp" || true
+        mv "$CONTRIB_FILE.tmp" "$CONTRIB_FILE"
+    fi
+    rebuild_repo
+fi
+
+if [[ "${1:-}" == "--nuke" ]]; then
+    echo -e "${BOLD}${RED}☢️  NUKING ALL COMMITS in ${REPO_DIR}${NC}"
+    echo -e "   This will delete the entire contribution history."
+    confirm
+    
+    rm -f "$CONTRIB_FILE"
+    rebuild_repo
+fi
 
 # ── Parse Arguments ─────────────────────────────────────────────────────────
 if [[ $# -lt 2 ]]; then
