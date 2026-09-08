@@ -1,12 +1,16 @@
-# 🟢 GitHub Contribution Painter
+# 🟢 GitHub Contribution Painter (Educational Prototype)
 
-A single-command tool to generate backdated GitHub commits — paint your contribution graph however you want.
+> [!CAUTION]
+> **Educational Purposes Only**
+> This project was built strictly as an experiment to test out shell scripting, Git history manipulation, and command-line automation. It is **not recommended for actual use**. Use with extreme caution — GitHub's automated abuse detection systems may suspend or ban your account if they identify an unnatural volume of commits generated in a short period of time.
 
-> **Note:** Commits are pushed to a **private repo** so they show on your profile graph without cluttering any real project.
+A single-command shell script to generate backdated GitHub commits and visualize patterns on a GitHub contribution graph.
 
 ---
 
 ## ⚡ Installation & Quick Start
+
+> **Note:** Running these commands will modify your GitHub contribution history. Proceed with caution.
 
 ```bash
 # 1. Install globally with one command (requires sudo if not run as root)
@@ -84,49 +88,39 @@ contribute --nuke                    # Wipe all contributions
 
 ---
 
-## 🛡️ Safety
+## 🛡️ Safety & Reverting
 
-Every run shows a **confirmation prompt** before committing:
-
-```
-🟢 Generating 5 commits on 2026-01-15
-─────────────────────────────────────────────
-
-  ⚠  This action is irreversible — commits cannot be undone.
-  Proceed? [y/N]: _
-```
+Every run shows a **confirmation prompt** before committing.
 
 - Type `y` → commits are created and pushed
 - Press Enter or type anything else → **aborted**, nothing happens
 
----
-
-## 🧠 How It Works
-
-1. Creates **empty commits** (`--allow-empty`) — no files are modified
-2. Sets `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` to the target date
-3. **Randomizes the timestamp** within 8 AM – 10 PM for each commit so it looks natural
-4. **Auto-pushes** to `origin/main` — contributions appear on your GitHub graph within minutes
-
-All commits are logged to `~/.daily-contributions/contributions.log` for your reference and to support the `--undo` feature.
+If you accidentally generate unwanted commits, you can use the `--undo <DATE>` or `--nuke` commands to purge the history from your local machine and force-push the clean history to GitHub.
 
 ---
 
-## 💡 Tips
+## 🧠 How It Works (Technical Details)
 
-- **Fill gaps in your graph:** Target specific dates you missed
-- **Paint patterns:** Use varying commit counts across dates to create visual patterns
-- **Bulk fill:** Use date ranges to cover entire months or years quickly
-- **Automate:** Use `-y` flag in cron jobs or scripts to skip prompts
+This script was designed to test the limits of Git date manipulation and bash scripting.
+1. Creates **empty commits** (`--allow-empty`) without tracking actual file changes.
+2. Manipulates `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` environment variables to forge backdated timestamps.
+3. **Randomizes the timestamp** within 8 AM – 10 PM for each commit to simulate human activity.
+4. **Auto-pushes** to `origin/main` — propagating the manipulated history to the GitHub profile graph.
+
+All actions are logged to `~/.daily-contributions/contributions.log` to support history parsing and the `--undo` feature.
 
 ---
 
-## ⚠️ Disclaimer
+## ⚠️ Disclaimer & Warning
 
-This tool is for **personal use** on your own GitHub profile. The commits are empty and go to a private repo — they don't affect any real projects. Use responsibly.
+This script manipulates your GitHub contribution graph by creating artificial commit history.
+**It is intended strictly for educational purposes and testing shell scripts/Git commands.**
+
+- **Account Risk**: Generating thousands of commits or manipulating the graph unnaturally can trigger GitHub's abuse detection mechanisms, potentially leading to account suspension or bans.
+- **Responsibility**: The author is not responsible for any actions taken against your account for using this tool. Use entirely at your own risk.
 
 ---
 
 ## 📜 License
 
-MIT — do whatever you want with it.
+MIT
